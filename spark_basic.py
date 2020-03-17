@@ -268,3 +268,97 @@ sqlContext.sql("select * from a left join b on a.age = b.age")
 import pandas
 
 user_pandas_df = user_df.toPandas().set_index("name")
+
+row_df = sqlContext.read.format("csv").option("header","true").option("delimiter","\t").load("user.csv")
+print(row_df.printSchema())
+row_df.select("age","user_id").show(5)
+
+row_df.registerTempTable("user")
+
+from pyspark.sql.functions import udf
+
+def replace_unknown(feature):
+	if feature=="?":
+		return "0"
+	else 
+		return feature
+		
+replace_unknown = udf(replace_unknown)
+
+from pyspark.sql.functions import col
+import pyspark.sql.types
+
+df = row_df.select(["userid","age"]+[replace_unknown(col(column)).cast("double").alias(column) for column in row_df.column[4:]])
+
+df.printSchema()
+
+train_df,test_df = df.randomSplit([0.7,0.3])
+train_df.cache()
+test_df.cache()
+
+
+# StringIndexer
+from pyspark.ml.feature import StringIndexer
+
+categeriesIndexer = StringIndexer(inputCol="job",outputCol="job_index")
+categeriesTransformer = categeriesIndexer.fit(df)
+
+print(categeriesTransformer.labels)
+
+# OneHot encoder
+
+from pyspark.ml.feature import OneHotEncoder
+from pyspark.ml.feature import VectorAssembler
+
+onehotencoder = OneHotEncoder(inputCol='categoryIndex', outputCol='categoryVec')
+oncoded = onehotencoder.transform(indexed)
+assember = VectorAssembler(inputCol=["age","user_id"],outputCol="features"]
+
+
+from pyspark.ml.classificaton import DecisionTreeClassifier
+clf = DecisionTreeClassifier(labelCol="label",featureCol="feature",impurity="gini",maxDepth=5,maxBins=5)
+model = clf.fit(df)
+
+from pyspark.ml import Pipeline
+pipeline = Pipeline(stages=[categeriesIndexer,onehotencoder,assember,clf])
+pipeline.getStages()
+pipeModel = pipeline.fit(train_df)
+predicted = pipeModel.transform(test_df)
+
+print(predicted.columns)
+
+
+
+
+def encode_columns(df, col_list):
+	indexers = [
+	StringIndexer(inputCol=c, outputCol=f'{c}_indexed').setHandleInvalid("keep")
+	for c in col_list
+	]
+	encoder = OneHotEncoderEstimator(
+		inputCols = [indexer.getOutputCol()) for indexer in indexers]) #.setDropLast(False)
+	newColumns = []
+	for f in col_list:
+		colMap = df.select(f'{f}', f'{f}_indexed').distinct().rdd.collectAsMap()
+		colTuple = sorted( (v, f'{f}_{k}') for k,v in colMap.items())
+		newColumns.append(v[1] for v in colTuple)
+
+	pipeline = Pipeline(stages =indexers + [encoder])
+	piped_encoder = pipeline.fit(df)
+	encoded_df = piped_encoder.transfrom(df)
+	return piped_encoder, encoded_df, newColumns
+————————————————
+版权声明：本文为CSDN博主「Lestat.Z.」的原创文章，遵循 CC 4.0 BY-SA 版权协议，转载请附上原文出处链接及本声明。
+原文链接：https://blog.csdn.net/yolohohohoho/article/details/102491292
+
+
+
+
+
+
+
+
+
+
+
+
