@@ -44,11 +44,11 @@ STORED AS TEXTFILE;
 4、传统数据库是写时模式，即数据在写入数据库是对模式（结构）进行检查，hive不会在数据加载时进行验证，而是在查询时进行，也就是读时模式
 
 ## 三 数据定义
-1、创建数据库： create  database if not exist financials;
+1、创建数据库： create  database if not exists financials;
 2、当我们创建数据库时，hive会在/usr/hive/warehouse/（hive.metastore.warehouse.dir中定义）中创建finaicials.db，也可以通过如下方式修改默认的位置：
 	create database financials location '/mypath/'
 3、使用数据库： use financials；
-4、删除数据库: drop database if exist financials；
+4、删除数据库: drop database if exists financials；
 5、创建表完整：
 
 create table if not exists mydb.employee{ # 在使用其他数据库时创建mydb数据库中的employee表
