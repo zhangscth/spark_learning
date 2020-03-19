@@ -297,6 +297,7 @@ train_df.cache()
 test_df.cache()
 
 
+
 # StringIndexer
 from pyspark.ml.feature import StringIndexer
 
@@ -312,23 +313,78 @@ from pyspark.ml.feature import VectorAssembler
 
 onehotencoder = OneHotEncoder(inputCol='categoryIndex', outputCol='categoryVec')
 oncoded = onehotencoder.transform(indexed)
-assember = VectorAssembler(inputCol=["age","user_id"],outputCol="features"]
+assember = VectorAssembler(inputCol=["age","user_id"],outputCol="features")
 
 
 from pyspark.ml.classificaton import DecisionTreeClassifier
-clf = DecisionTreeClassifier(labelCol="label",featureCol="feature",impurity="gini",maxDepth=5,maxBins=5)
-model = clf.fit(df)
+dt_clf = DecisionTreeClassifier(labelCol="label",featureCol="feature",impurity="gini",maxDepth=5,maxBins=5)
+model = dt_clf.fit(df)
 
 from pyspark.ml import Pipeline
-pipeline = Pipeline(stages=[categeriesIndexer,onehotencoder,assember,clf])
+pipeline = Pipeline(stages=[categeriesIndexer,onehotencoder,assember,dt_clf])
 pipeline.getStages()
 pipeModel = pipeline.fit(train_df)
 predicted = pipeModel.transform(test_df)
 
 print(predicted.columns)
 
+###### evaluation auc
+
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+evaluator = BinaryClassificationEvaluator(rawPredictionCol="predict",labelCol="label",metricName="areaUderROC")
+
+prediction = pipeModel.transform(test_df)
+auc = evaluator.evaluate(prediction)
+print(auc)
+
+###### grid search
+from pyspark.ml.tuning import ParamGridBuilder,TrainValidationSplit
+paramGrid = ParamGridBuilder()\
+			.addGrid(dt_clf.impurity,["gini","entropy"])\
+			.addGrid(dt_clf.maxDepth,[5,10,15])\
+			.addGrid(dt_clf.maxBins,[10,15,20])
+			.build()
+trainValidationSplit = TrainValidationSplit(estimator=dt_clf,evaluator=evaluator,estimatorParamMaps=paramGrid,trainRatio=0.8)
+tvsPipeline = Pipeline(stages=[categeriesIndexer,onehotencoder,assember,trainValidationSplit])
+tvsPipelineModel = tvsPipeline.fit(train_df)
+# 查看训练完成的最佳模型
+bestModel = tvsPipelineModel.stage[3].bestModel
+predctions = bestModel.transform(test_df)
+auc = estimator.evaluate(predctions)
 
 
+
+###### k-fold cross validation
+from pyspark.ml.tuning import CrossValidator
+
+cv = CrossValidator(estimator=dt_clf,evaluator=evaluator,estimatorParamMaps=paramGrid,numFolds=3)
+cv_pipeline = Pipeline(stages=[categeriesIndexer,onehotencoder,assember,cv])
+cv_pipelineModel = cv_pipeline.fit(train_df)
+bestModel = cv_pipelineModel.stage[3].bestModel
+predictions = bestModel.transform(test_df)
+auc = evaluator.evaluate(prediction)
+
+
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import StringIndexer, OneHotEncoderEstimator
+
+df = spark.createDataFrame([(0, "a", 1), (1, "b", 2), (2, "c", 3), (3, "a", 4), (4, "a", 4), (5, "c", 3)], ["id", "category1", "category2"])
+
+indexer = StringIndexer(inputCol="category1", outputCol="category1Index")
+inputs = [indexer.getOutputCol(), "category2"]
+encoder = OneHotEncoderEstimator(inputCols=inputs, outputCols=["categoryVec1", "categoryVec2"])
+pipeline = Pipeline(stages=[indexer, encoder])
+pipeline.fit(df).transform(df).show()
+# +---+---------+---------+--------------+-------------+-------------+
+# | id|category1|category2|category1Index| categoryVec1| categoryVec2|
+# +---+---------+---------+--------------+-------------+-------------+
+# |  0|        a|        1|           0.0|(2,[0],[1.0])|(4,[1],[1.0])|
+# |  1|        b|        2|           2.0|    (2,[],[])|(4,[2],[1.0])|
+# |  2|        c|        3|           1.0|(2,[1],[1.0])|(4,[3],[1.0])|
+# |  3|        a|        4|           0.0|(2,[0],[1.0])|    (4,[],[])|
+# |  4|        a|        4|           0.0|(2,[0],[1.0])|    (4,[],[])|
+# |  5|        c|        3|           1.0|(2,[1],[1.0])|(4,[3],[1.0])|
+# +---+---------+---------+--------------+-------------+-------------+
 
 def encode_columns(df, col_list):
 	indexers = [
@@ -350,15 +406,3 @@ def encode_columns(df, col_list):
 ————————————————
 版权声明：本文为CSDN博主「Lestat.Z.」的原创文章，遵循 CC 4.0 BY-SA 版权协议，转载请附上原文出处链接及本声明。
 原文链接：https://blog.csdn.net/yolohohohoho/article/details/102491292
-
-
-
-
-
-
-
-
-
-
-
-
